@@ -1,5 +1,6 @@
 # Dependencias locales y temporales
 node_modules/
+.firebase/
 .DS_Store
 Thumbs.db
 *.log

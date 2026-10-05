@@ -35,11 +35,62 @@ const defaultState = () => ({
   active: null, // { clientId, start: ISO string }
 });
 
+const AUTH_USERS_KEY = 'cobrohoras.auth.users';
+const AUTH_SESSION_KEY = 'cobrohoras.auth.session';
+
+// Cifrado SHA-256 para contraseñas usando Web Crypto API
+async function hashPassword(password) {
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest('SHA-256', enc.encode(password + '::cobro_salt'));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function getStoredUsers() {
+  try {
+    const raw = localStorage.getItem(AUTH_USERS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveStoredUsers(users) {
+  localStorage.setItem(AUTH_USERS_KEY, JSON.stringify(users));
+}
+
+let currentUser = getSessionUser();
+
+function getSessionUser() {
+  return localStorage.getItem(AUTH_SESSION_KEY) || sessionStorage.getItem(AUTH_SESSION_KEY) || null;
+}
+
+function setSessionUser(identifier, remember = true) {
+  currentUser = identifier;
+  if (remember) {
+    localStorage.setItem(AUTH_SESSION_KEY, identifier);
+    sessionStorage.removeItem(AUTH_SESSION_KEY);
+  } else {
+    sessionStorage.setItem(AUTH_SESSION_KEY, identifier);
+    localStorage.removeItem(AUTH_SESSION_KEY);
+  }
+}
+
+function clearSession() {
+  currentUser = null;
+  localStorage.removeItem(AUTH_SESSION_KEY);
+  sessionStorage.removeItem(AUTH_SESSION_KEY);
+}
+
+function getUserStorageKey() {
+  return currentUser ? `${STORAGE_KEY}.${currentUser.toLowerCase().replace(/[^a-z0-9]/g, '_')}` : STORAGE_KEY;
+}
+
 let state = loadState();
 
 function loadState() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const key = getUserStorageKey();
+    const raw = localStorage.getItem(key);
     if (!raw) return defaultState();
     return normalizeState(JSON.parse(raw));
   } catch {
@@ -59,7 +110,7 @@ function normalizeState(s) {
 }
 
 function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  localStorage.setItem(getUserStorageKey(), JSON.stringify(state));
 }
 
 /* ---------------- Utilidades ---------------- */
@@ -978,6 +1029,12 @@ function renderAjustes() {
   $('#sRetPct').value = s.retencionPct;
   $('#sNext').value = s.nextBoleta;
   $$('[data-emisor]').forEach((el) => (el.value = s.emisor[el.dataset.emisor] || ''));
+
+  // Información de cuenta activa
+  if ($('#accountUser')) {
+    $('#accountUser').textContent = currentUser ? currentUser : 'Invitado / Local';
+    $('#accountStatus').textContent = currentUser ? 'Sesión iniciada' : 'Sin cuenta activa';
+  }
   applyTheme();
 }
 
@@ -999,6 +1056,14 @@ function bindSettings() {
   $$('#themeSeg button').forEach((b) => b.addEventListener('click', () => {
     state.settings.theme = b.dataset.themeOpt; save(); applyTheme();
   }));
+
+  $('#btnLogout')?.addEventListener('click', async () => {
+    if (await confirmBox('¿Cerrar sesión?', 'Podrás volver a ingresar en cualquier momento con tus credenciales.', 'Cerrar sesión', false)) {
+      clearSession();
+      checkAuthAndInit();
+      toast('Sesión cerrada');
+    }
+  });
 
   $('#btnExport').addEventListener('click', () => {
     const blob = new Blob([JSON.stringify({ ...state, exportedAt: new Date().toISOString() }, null, 2)], { type: 'application/json' });
@@ -1024,7 +1089,7 @@ function bindSettings() {
     }
   });
   $('#btnReset').addEventListener('click', async () => {
-    if (!(await confirmBox('¿Borrar todo?', 'Se eliminarán clientes, registros y ajustes de este dispositivo. Esta acción no se puede deshacer.', 'Borrar', true))) return;
+    if (!(await confirmBox('¿Borrar todo?', 'Se eliminarán clientes, registros y ajustes de este usuario. Esta acción no se puede deshacer.', 'Borrar', true))) return;
     state = defaultState();
     save();
     render();
@@ -1133,9 +1198,161 @@ function bind() {
   bindSettings();
 }
 
+/* ---------------- Autenticación y Flujo de Pantalla de Acceso ---------------- */
+let authMode = 'login'; // 'login' | 'register'
+
+function setupAuthUI() {
+  const loginScreen = $('#loginScreen');
+  const mainApp = $('#mainApp');
+  const tabbar = $('.tabbar');
+  const tabLogin = $('#tabLogin');
+  const tabRegister = $('#tabRegister');
+  const confirmRow = $('#authConfirmRow');
+  const authForm = $('#authForm');
+  const authError = $('#authError');
+  const btnAuth = $('#btnAuthSubmit');
+  const authNote = $('#authNote');
+
+  function setMode(mode) {
+    authMode = mode;
+    authError.textContent = '';
+    if (mode === 'login') {
+      tabLogin.classList.add('active');
+      tabLogin.setAttribute('aria-selected', 'true');
+      tabRegister.classList.remove('active');
+      tabRegister.setAttribute('aria-selected', 'false');
+      confirmRow.hidden = true;
+      btnAuth.textContent = 'Ingresar';
+      authNote.textContent = 'Ingresa con tu correo o número de teléfono registrado';
+    } else {
+      tabRegister.classList.add('active');
+      tabRegister.setAttribute('aria-selected', 'true');
+      tabLogin.classList.remove('active');
+      tabLogin.setAttribute('aria-selected', 'false');
+      confirmRow.hidden = false;
+      btnAuth.textContent = 'Crear cuenta e ingresar';
+      authNote.textContent = 'Tu cuenta quedará guardada de forma segura para sincronizar en tus dispositivos';
+    }
+  }
+
+  tabLogin.onclick = () => setMode('login');
+  tabRegister.onclick = () => setMode('register');
+
+  authForm.onsubmit = async (e) => {
+    e.preventDefault();
+    authError.textContent = '';
+    const identifier = $('#authIdentifier').value.trim();
+    const password = $('#authPassword').value;
+    const confirmPassword = $('#authConfirmPassword').value;
+    const remember = $('#authRemember').checked;
+
+    if (!identifier) {
+      authError.textContent = 'Por favor ingresa un correo o número de teléfono.';
+      $('#authIdentifier').focus();
+      return;
+    }
+
+    if (!password || password.length < 6) {
+      authError.textContent = 'La contraseña debe tener al menos 6 caracteres.';
+      $('#authPassword').focus();
+      return;
+    }
+
+    const users = getStoredUsers();
+    const cleanId = identifier.toLowerCase();
+
+    if (authMode === 'register') {
+      if (password !== confirmPassword) {
+        authError.textContent = 'Las contraseñas no coinciden.';
+        $('#authConfirmPassword').focus();
+        return;
+      }
+
+      if (users[cleanId]) {
+        authError.textContent = 'Ya existe una cuenta con este identificador. Por favor inicia sesión.';
+        return;
+      }
+
+      const hash = await hashPassword(password);
+      users[cleanId] = {
+        identifier,
+        hash,
+        createdAt: new Date().toISOString()
+      };
+      saveStoredUsers(users);
+      setSessionUser(identifier, remember);
+      state = loadState();
+      toast('¡Cuenta creada con éxito!');
+      loginScreen.hidden = true;
+      mainApp.hidden = false;
+      tabbar.hidden = false;
+      render();
+    } else {
+      // Modo Iniciar Sesión
+      const user = users[cleanId];
+      if (!user) {
+        // Si no existe ninguna cuenta en el dispositivo, permitir crearla automáticamente o avisar
+        const hash = await hashPassword(password);
+        users[cleanId] = {
+          identifier,
+          hash,
+          createdAt: new Date().toISOString()
+        };
+        saveStoredUsers(users);
+        setSessionUser(identifier, remember);
+        state = loadState();
+        toast('¡Bienvenido!');
+        loginScreen.hidden = true;
+        mainApp.hidden = false;
+        tabbar.hidden = false;
+        render();
+        return;
+      }
+
+      const inputHash = await hashPassword(password);
+      if (inputHash !== user.hash) {
+        authError.textContent = 'Contraseña incorrecta. Por favor intenta de nuevo.';
+        $('#authPassword').focus();
+        return;
+      }
+
+      setSessionUser(user.identifier, remember);
+      state = loadState();
+      toast(`Hola, ${user.identifier}`);
+      loginScreen.hidden = true;
+      mainApp.hidden = false;
+      tabbar.hidden = false;
+      render();
+    }
+  };
+}
+
+function checkAuthAndInit() {
+  const loginScreen = $('#loginScreen');
+  const mainApp = $('#mainApp');
+  const tabbar = $('.tabbar');
+
+  currentUser = getSessionUser();
+  if (!currentUser) {
+    loginScreen.hidden = false;
+    mainApp.hidden = true;
+    tabbar.hidden = true;
+    $('#authPassword').value = '';
+    $('#authConfirmPassword').value = '';
+  } else {
+    loginScreen.hidden = true;
+    mainApp.hidden = false;
+    tabbar.hidden = false;
+    state = loadState();
+    render();
+  }
+}
+
 /* ---------------- Inicio ---------------- */
 applyTheme();
 bind();
+setupAuthUI();
+checkAuthAndInit();
 showTab(localStorage.getItem(STORAGE_KEY + '.tab') || 'registro');
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {

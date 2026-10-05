@@ -18,7 +18,56 @@
 </head>
 <body>
 
-<main class="app">
+<!-- ============ PANTALLA DE ACCESO (ESTILO APPLE) ============ -->
+<div id="loginScreen" class="login-screen" hidden>
+  <div class="login-card">
+    <div class="login-brand">
+      <img src="icon.svg" alt="Logo Cobro Horas" class="login-logo" width="76" height="76">
+      <h2>Cobro Horas</h2>
+      <p class="login-subtitle">Ingresa para sincronizar tus horas de servicio</p>
+    </div>
+
+    <!-- Toggle de pestaña: Iniciar sesión / Crear cuenta -->
+    <div class="segmented login-segmented" role="tablist">
+      <button type="button" id="tabLogin" class="active" role="tab" aria-selected="true">Iniciar sesión</button>
+      <button type="button" id="tabRegister" role="tab" aria-selected="false">Crear cuenta</button>
+    </div>
+
+    <form id="authForm" novalidate>
+      <div class="group auth-group">
+        <label class="row field">
+          <span>Identificador</span>
+          <input type="text" id="authIdentifier" placeholder="Correo o teléfono (+569...)" autocomplete="username" required>
+        </label>
+        <label class="row field">
+          <span>Contraseña</span>
+          <input type="password" id="authPassword" placeholder="Mínimo 6 caracteres" autocomplete="current-password" required>
+        </label>
+        <label class="row field" id="authConfirmRow" hidden>
+          <span>Confirmar</span>
+          <input type="password" id="authConfirmPassword" placeholder="Repite tu contraseña" autocomplete="new-password">
+        </label>
+      </div>
+
+      <div class="auth-remember">
+        <label class="switch-inline">
+          <input type="checkbox" id="authRemember" checked>
+          <span>Recordar sesión en este dispositivo</span>
+        </label>
+      </div>
+
+      <p class="form-error" id="authError" role="alert"></p>
+
+      <button type="submit" class="btn" id="btnAuthSubmit">Ingresar</button>
+    </form>
+
+    <div class="login-footer">
+      <p class="group-foot" id="authNote">Acceso seguro con contraseña cifrada localmente</p>
+    </div>
+  </div>
+</div>
+
+<main class="app" id="mainApp">
 
   <!-- ============ REGISTRO ============ -->
   <section class="view" id="view-registro" data-view="registro">
@@ -148,13 +197,24 @@
       <label class="row field"><span>Próximo N° de boleta</span><input type="number" min="1" step="1" id="sNext" data-setting="nextBoleta"></label>
     </div>
 
+    <p class="group-title">Cuenta y sesión</p>
+    <div class="group">
+      <div class="row">
+        <div class="row-main">
+          <span class="row-title" id="accountUser">Usuario conectado</span>
+          <span class="row-sub" id="accountStatus">Sesión activa</span>
+        </div>
+      </div>
+      <button class="row link danger" id="btnLogout">Cerrar sesión</button>
+    </div>
+
     <p class="group-title">Respaldo</p>
     <div class="group">
       <button class="row link" id="btnExport">Exportar respaldo (JSON)</button>
       <button class="row link" id="btnImport">Importar respaldo</button>
       <button class="row link danger" id="btnReset">Borrar todos los datos</button>
     </div>
-    <p class="group-foot">Los datos se guardan solo en este dispositivo. Haz respaldos periódicos.</p>
+    <p class="group-foot">Los datos se guardan de forma privada y segura en tu cuenta.</p>
     <input type="file" id="importFile" accept="application/json,.json" hidden>
   </section>
 </main>

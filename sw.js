@@ -1,5 +1,5 @@
 // Service worker: permite usar la app sin conexión una vez instalada.
-const CACHE = 'cobro-horas-v1';
+const CACHE = 'cobro-horas-v2';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './icon.svg', './manifest.webmanifest',
   './vendor/exceljs.min.js', './vendor/jspdf.umd.min.js', './vendor/jspdf.plugin.autotable.min.js',

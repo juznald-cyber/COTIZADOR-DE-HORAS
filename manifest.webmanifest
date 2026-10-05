@@ -3,7 +3,7 @@
   "short_name": "Cobro Horas",
   "description": "Registro de horas de servicio, reportes en Excel y boletas en PDF.",
   "lang": "es",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#F2F2F7",
