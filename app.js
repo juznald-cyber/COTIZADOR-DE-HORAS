@@ -35,10 +35,41 @@ const defaultState = () => ({
   active: null, // { clientId, start: ISO string }
 });
 
+/* =========================================================
+   CONFIGURACIÓN FIREBASE & CLOUD FIRESTORE
+   ========================================================= */
+const firebaseConfig = {
+  projectId: "cotizador-de-horas-cc83e",
+  appId: "1:715395079510:web:d8d15df16f6cfe84290af7",
+  storageBucket: "cotizador-de-horas-cc83e.firebasestorage.app",
+  apiKey: "AIzaSyC-9JKyT0NURMwkW6ZRExy6YgAZiL165AE",
+  authDomain: "cotizador-de-horas-cc83e.firebaseapp.com",
+  messagingSenderId: "715395079510",
+  measurementId: "G-2D2JKTCDG5"
+};
+
+let db = null;
+let fbAuth = null;
+let firestoreUnsubscribe = null;
+
+if (window.firebase) {
+  try {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    fbAuth = firebase.auth();
+    db = firebase.firestore();
+    // Habilitar persistencia sin conexión de Firestore
+    db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+  } catch (err) {
+    console.warn('Firebase init fallback:', err);
+  }
+}
+
 const AUTH_USERS_KEY = 'cobrohoras.auth.users';
 const AUTH_SESSION_KEY = 'cobrohoras.auth.session';
 
-// Cifrado SHA-256 para contraseñas usando Web Crypto API
+// Cifrado SHA-256 para contraseñas locales y tokens
 async function hashPassword(password) {
   const enc = new TextEncoder();
   const buf = await crypto.subtle.digest('SHA-256', enc.encode(password + '::cobro_salt'));
@@ -76,6 +107,13 @@ function setSessionUser(identifier, remember = true) {
 }
 
 function clearSession() {
+  if (firestoreUnsubscribe) {
+    firestoreUnsubscribe();
+    firestoreUnsubscribe = null;
+  }
+  if (fbAuth) {
+    fbAuth.signOut().catch(() => {});
+  }
   currentUser = null;
   localStorage.removeItem(AUTH_SESSION_KEY);
   sessionStorage.removeItem(AUTH_SESSION_KEY);
@@ -83,6 +121,10 @@ function clearSession() {
 
 function getUserStorageKey() {
   return currentUser ? `${STORAGE_KEY}.${currentUser.toLowerCase().replace(/[^a-z0-9]/g, '_')}` : STORAGE_KEY;
+}
+
+function getSafeUserId() {
+  return currentUser ? currentUser.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'guest';
 }
 
 let state = loadState();
@@ -109,8 +151,62 @@ function normalizeState(s) {
   };
 }
 
+let isSyncingFromCloud = false;
+
 function save() {
   localStorage.setItem(getUserStorageKey(), JSON.stringify(state));
+  // Sincronizar en la nube con Firestore en tiempo real
+  if (!isSyncingFromCloud && db && currentUser) {
+    syncToFirestore();
+  }
+}
+
+async function syncToFirestore() {
+  if (!db || !currentUser) return;
+  try {
+    const uid = getSafeUserId();
+    const dataToSave = {
+      clients: state.clients,
+      entries: state.entries,
+      settings: state.settings,
+      active: state.active,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    await db.collection('user_data').doc(uid).set(dataToSave, { merge: true });
+  } catch (err) {
+    console.warn('Error sincronizando con Firestore:', err);
+  }
+}
+
+function startFirestoreListener() {
+  if (firestoreUnsubscribe) {
+    firestoreUnsubscribe();
+    firestoreUnsubscribe = null;
+  }
+  if (!db || !currentUser) return;
+  const uid = getSafeUserId();
+  firestoreUnsubscribe = db.collection('user_data').doc(uid).onSnapshot((doc) => {
+    if (doc.exists) {
+      const cloudData = doc.data();
+      if (cloudData) {
+        isSyncingFromCloud = true;
+        state = normalizeState({
+          clients: cloudData.clients || [],
+          entries: cloudData.entries || [],
+          settings: cloudData.settings || state.settings,
+          active: cloudData.active || null
+        });
+        localStorage.setItem(getUserStorageKey(), JSON.stringify(state));
+        isSyncingFromCloud = false;
+        render();
+      }
+    } else {
+      // Primera vez en la nube: sube el estado local
+      syncToFirestore();
+    }
+  }, (err) => {
+    console.warn('Firestore snapshot listener info:', err);
+  });
 }
 
 /* ---------------- Utilidades ---------------- */
@@ -1282,6 +1378,7 @@ function setupAuthUI() {
       saveStoredUsers(users);
       setSessionUser(identifier, remember);
       state = loadState();
+      startFirestoreListener();
       toast('¡Cuenta creada con éxito!');
       loginScreen.hidden = true;
       mainApp.hidden = false;
@@ -1301,6 +1398,7 @@ function setupAuthUI() {
         saveStoredUsers(users);
         setSessionUser(identifier, remember);
         state = loadState();
+        startFirestoreListener();
         toast('¡Bienvenido!');
         loginScreen.hidden = true;
         mainApp.hidden = false;
@@ -1318,6 +1416,7 @@ function setupAuthUI() {
 
       setSessionUser(user.identifier, remember);
       state = loadState();
+      startFirestoreListener();
       toast(`Hola, ${user.identifier}`);
       loginScreen.hidden = true;
       mainApp.hidden = false;
@@ -1344,6 +1443,7 @@ function checkAuthAndInit() {
     mainApp.hidden = false;
     tabbar.hidden = false;
     state = loadState();
+    startFirestoreListener();
     render();
   }
 }

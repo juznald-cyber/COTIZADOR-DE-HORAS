@@ -1,8 +1,9 @@
 // Service worker: permite usar la app sin conexión una vez instalada.
-const CACHE = 'cobro-horas-v2';
+const CACHE = 'cobro-horas-v3';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './icon.svg', './manifest.webmanifest',
   './vendor/exceljs.min.js', './vendor/jspdf.umd.min.js', './vendor/jspdf.plugin.autotable.min.js',
+  './vendor/firebase-app-compat.js', './vendor/firebase-auth-compat.js', './vendor/firebase-firestore-compat.js'
 ];
 
 self.addEventListener('install', (e) => {
