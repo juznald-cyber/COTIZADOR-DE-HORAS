@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="es" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cobro Horas</title>
+  <meta name="description" content="Registro de horas de servicio, reportes en Excel y boletas en PDF.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Cobro Horas">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<main class="app">
+
+  <!-- ============ REGISTRO ============ -->
+  <section class="view" id="view-registro" data-view="registro">
+    <header class="large-header">
+      <h1>Registro</h1>
+      <button class="icon-btn" id="btnAddEntry" aria-label="Registrar horas manualmente">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </header>
+
+    <!-- Servicio en curso -->
+    <div class="card timer-card" id="timerCard"></div>
+
+    <!-- Navegación de mes -->
+    <div class="month-nav">
+      <button class="icon-btn small" id="prevMonth" aria-label="Mes anterior">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+      </button>
+      <h2 id="monthLabel">—</h2>
+      <button class="icon-btn small" id="nextMonth" aria-label="Mes siguiente">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><span class="stat-label">Horas del mes</span><span class="stat-value" id="mHours">0:00</span></div>
+      <div class="stat"><span class="stat-label">Total a cobrar</span><span class="stat-value accent" id="mTotal">$0</span></div>
+    </div>
+
+    <div id="entryList"></div>
+  </section>
+
+  <!-- ============ CLIENTES ============ -->
+  <section class="view" id="view-clientes" data-view="clientes" hidden>
+    <header class="large-header">
+      <h1>Clientes</h1>
+      <button class="icon-btn" id="btnAddClient" aria-label="Agregar cliente">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </header>
+    <div id="clientList"></div>
+  </section>
+
+  <!-- ============ REPORTES ============ -->
+  <section class="view" id="view-reportes" data-view="reportes" hidden>
+    <header class="large-header"><h1>Reportes</h1></header>
+
+    <p class="group-title">Período</p>
+    <div class="chips" role="group" aria-label="Período rápido">
+      <button class="chip" data-preset="month">Este mes</button>
+      <button class="chip" data-preset="prev">Mes anterior</button>
+      <button class="chip" data-preset="custom">Personalizado</button>
+    </div>
+    <div class="group">
+      <label class="row field"><span>Desde</span><input type="date" id="rDesde"></label>
+      <label class="row field"><span>Hasta</span><input type="date" id="rHasta"></label>
+      <label class="row field"><span>Cliente</span><select id="rCliente"></select></label>
+    </div>
+
+    <div class="stats three">
+      <div class="stat"><span class="stat-label">Horas</span><span class="stat-value" id="rHours">0:00</span></div>
+      <div class="stat"><span class="stat-label">Registros</span><span class="stat-value" id="rCount">0</span></div>
+      <div class="stat"><span class="stat-label">Total</span><span class="stat-value accent" id="rTotal">$0</span></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-green" id="btnExcel">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 19h16"/></svg>
+        Descargar Excel
+      </button>
+      <button class="btn" id="btnBoleta">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h8l4 4v14H7zM15 3v4h4M10 12h6M10 16h6"/></svg>
+        Emitir boleta PDF
+      </button>
+    </div>
+
+    <p class="group-title">Detalle</p>
+    <div id="reportList"></div>
+  </section>
+
+  <!-- ============ AJUSTES ============ -->
+  <section class="view" id="view-ajustes" data-view="ajustes" hidden>
+    <header class="large-header"><h1>Ajustes</h1></header>
+
+    <p class="group-title">Apariencia</p>
+    <div class="group pad">
+      <div class="segmented" role="radiogroup" aria-label="Tema" id="themeSeg">
+        <button role="radio" data-theme-opt="auto">Automático</button>
+        <button role="radio" data-theme-opt="light">Claro</button>
+        <button role="radio" data-theme-opt="dark">Oscuro</button>
+      </div>
+    </div>
+
+    <p class="group-title">Cobro</p>
+    <div class="group">
+      <label class="row field"><span>Valor por hora</span><input type="number" inputmode="decimal" min="0" step="any" id="sTarifa" data-setting="tarifa"></label>
+      <label class="row field"><span>Moneda</span>
+        <select id="sMoneda" data-setting="moneda">
+          <option value="CLP">Peso chileno (CLP)</option>
+          <option value="USD">Dólar (USD)</option>
+          <option value="EUR">Euro (EUR)</option>
+          <option value="ARS">Peso argentino (ARS)</option>
+          <option value="MXN">Peso mexicano (MXN)</option>
+          <option value="COP">Peso colombiano (COP)</option>
+          <option value="PEN">Sol peruano (PEN)</option>
+          <option value="UYU">Peso uruguayo (UYU)</option>
+        </select>
+      </label>
+      <label class="row field switch-row"><span>Aplicar retención</span><input type="checkbox" class="switch" id="sRetOn" data-setting="retencionOn"></label>
+      <label class="row field"><span>% Retención</span><input type="number" inputmode="decimal" min="0" max="100" step="0.01" id="sRetPct" data-setting="retencionPct"></label>
+    </div>
+    <p class="group-foot">La tarifa se usa por defecto. Puedes definir una tarifa distinta para cada cliente.</p>
+
+    <p class="group-title">Mis datos (aparecen en la boleta)</p>
+    <div class="group">
+      <label class="row field"><span>Nombre</span><input type="text" autocomplete="name" data-emisor="nombre" placeholder="Tu nombre o empresa"></label>
+      <label class="row field"><span>RUT / ID</span><input type="text" data-emisor="rut" placeholder="12.345.678-9"></label>
+      <label class="row field"><span>Profesión / Giro</span><input type="text" data-emisor="giro" placeholder="Servicios profesionales"></label>
+      <label class="row field"><span>Dirección</span><input type="text" autocomplete="street-address" data-emisor="direccion" placeholder="Opcional"></label>
+      <label class="row field"><span>Correo</span><input type="email" autocomplete="email" data-emisor="email" placeholder="tu@correo.cl"></label>
+      <label class="row field"><span>Teléfono</span><input type="tel" autocomplete="tel" data-emisor="telefono" placeholder="+56 9 1234 5678"></label>
+      <label class="row field column"><span>Datos de pago</span><textarea rows="3" data-emisor="pago" placeholder="Banco, tipo de cuenta, N° de cuenta, RUT, correo…"></textarea></label>
+    </div>
+
+    <p class="group-title">Boletas</p>
+    <div class="group">
+      <label class="row field"><span>Próximo N° de boleta</span><input type="number" min="1" step="1" id="sNext" data-setting="nextBoleta"></label>
+    </div>
+
+    <p class="group-title">Respaldo</p>
+    <div class="group">
+      <button class="row link" id="btnExport">Exportar respaldo (JSON)</button>
+      <button class="row link" id="btnImport">Importar respaldo</button>
+      <button class="row link danger" id="btnReset">Borrar todos los datos</button>
+    </div>
+    <p class="group-foot">Los datos se guardan solo en este dispositivo. Haz respaldos periódicos.</p>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
+  </section>
+</main>
+
+<!-- ============ TAB BAR ============ -->
+<nav class="tabbar" aria-label="Secciones">
+  <button class="tab" data-tab="registro" aria-current="page">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+    <span>Registro</span>
+  </button>
+  <button class="tab" data-tab="clientes">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14.5c2.4 0 4 1.4 4.5 4"/></svg>
+    <span>Clientes</span>
+  </button>
+  <button class="tab" data-tab="reportes">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+    <span>Reportes</span>
+  </button>
+  <button class="tab" data-tab="ajustes">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    <span>Ajustes</span>
+  </button>
+</nav>
+
+<!-- ============ DIÁLOGO: REGISTRO DE HORAS ============ -->
+<dialog id="entryDialog" class="sheet" closedby="any" autofocus aria-labelledby="entryTitle">
+  <form id="entryForm" novalidate>
+    <header class="sheet-header">
+      <button type="button" class="text-btn" data-close>Cancelar</button>
+      <h2 id="entryTitle">Nuevo registro</h2>
+      <button type="submit" class="text-btn strong">Guardar</button>
+    </header>
+    <div class="sheet-body">
+      <div class="group">
+        <label class="row field"><span>Cliente</span><select name="clientId" required></select></label>
+        <label class="row field"><span>Fecha</span><input type="date" name="fecha" required></label>
+        <label class="row field"><span>Hora inicio</span><input type="time" name="inicio" required></label>
+        <label class="row field"><span>Hora término</span><input type="time" name="fin" required></label>
+        <label class="row field"><span>Valor por hora</span><input type="number" inputmode="decimal" min="0" step="any" name="tarifa" required></label>
+        <label class="row field column"><span>Detalle (opcional)</span><textarea name="descripcion" rows="2" placeholder="Ej: soporte, reunión, visita…"></textarea></label>
+      </div>
+      <div class="calc" id="entryCalc"></div>
+      <p class="form-error" id="entryError" role="alert"></p>
+      <button type="button" class="btn btn-plain danger" id="btnDeleteEntry" hidden>Eliminar registro</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ DIÁLOGO: CLIENTE ============ -->
+<dialog id="clientDialog" class="sheet" closedby="any" autofocus aria-labelledby="clientTitle">
+  <form id="clientForm" novalidate>
+    <header class="sheet-header">
+      <button type="button" class="text-btn" data-close>Cancelar</button>
+      <h2 id="clientTitle">Nuevo cliente</h2>
+      <button type="submit" class="text-btn strong">Guardar</button>
+    </header>
+    <div class="sheet-body">
+      <div class="group">
+        <label class="row field"><span>Nombre</span><input type="text" name="nombre" required placeholder="Requerido"></label>
+        <label class="row field"><span>RUT / ID</span><input type="text" name="rut" placeholder="Opcional"></label>
+        <label class="row field"><span>Correo</span><input type="email" name="email" placeholder="cliente@correo.cl"></label>
+        <label class="row field"><span>WhatsApp</span><input type="tel" name="telefono" placeholder="+56 9 1234 5678"></label>
+        <label class="row field"><span>Dirección</span><input type="text" name="direccion" placeholder="Opcional"></label>
+        <label class="row field"><span>Tarifa propia</span><input type="number" inputmode="decimal" min="0" step="any" name="tarifa" placeholder="Usa la general"></label>
+      </div>
+      <p class="group-foot">Si dejas la tarifa vacía se usará el valor por hora general.</p>
+      <p class="form-error" id="clientError" role="alert"></p>
+      <button type="button" class="btn btn-plain danger" id="btnDeleteClient" hidden>Eliminar cliente</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ DIÁLOGO: BOLETA ============ -->
+<dialog id="boletaDialog" class="sheet" closedby="any" autofocus aria-labelledby="boletaTitle">
+  <form id="boletaForm" novalidate>
+    <header class="sheet-header">
+      <button type="button" class="text-btn" data-close>Cerrar</button>
+      <h2 id="boletaTitle">Emitir boleta</h2>
+      <span class="text-btn placeholder" aria-hidden="true">Cerrar</span>
+    </header>
+    <div class="sheet-body">
+      <div class="calc" id="boletaSummary"></div>
+      <div class="group">
+        <label class="row field"><span>N° de boleta</span><input type="number" min="1" step="1" name="numero" required></label>
+        <label class="row field"><span>Fecha de emisión</span><input type="date" name="fechaEmision" required></label>
+        <label class="row field column"><span>Concepto</span><input type="text" name="concepto" class="left"></label>
+        <label class="row field switch-row"><span>Aplicar retención</span><input type="checkbox" class="switch" name="retOn"></label>
+      </div>
+      <button type="submit" class="btn" id="btnGenBoleta">Generar boleta PDF</button>
+
+      <div id="boletaActions" hidden>
+        <p class="group-title">Boleta lista · <span id="boletaFileName"></span></p>
+        <div class="action-grid">
+          <button type="button" class="tile" id="actShare">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M8 7l4-4 4 4M5 12v8h14v-8"/></svg><span>Compartir</span>
+          </button>
+          <button type="button" class="tile" id="actDownload">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 19h16"/></svg><span>Descargar</span>
+          </button>
+          <button type="button" class="tile" id="actWhatsapp">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/><path d="M9 9.5c.3 2.4 2.1 4.2 4.5 4.5l1-1.2 2 .9c-.2 1.2-1.1 1.8-2.3 1.8A6 6 0 0 1 8 9.3c0-1.2.6-2.1 1.8-2.3l.9 2z"/></svg><span>WhatsApp</span>
+          </button>
+          <button type="button" class="tile" id="actEmail">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg><span>Correo</span>
+          </button>
+          <button type="button" class="tile" id="actView">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><span>Ver PDF</span>
+          </button>
+        </div>
+        <p class="group-foot">En el celular, “Compartir” adjunta el PDF directo en WhatsApp, Correo u otra app. En computador, WhatsApp y Correo descargan el PDF y abren el mensaje para que lo adjuntes.</p>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ DIÁLOGO: CONFIRMAR ============ -->
+<dialog id="confirmDialog" class="alert" aria-labelledby="confirmTitle">
+  <h2 id="confirmTitle"></h2>
+  <p id="confirmMsg"></p>
+  <div class="alert-actions">
+    <button type="button" class="alert-btn" id="confirmCancel">Cancelar</button>
+    <button type="button" class="alert-btn strong" id="confirmOk">Aceptar</button>
+  </div>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" popover="manual"></div>
+
+<script src="vendor/exceljs.min.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/jspdf.plugin.autotable.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
