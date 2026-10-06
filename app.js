@@ -165,13 +165,13 @@ async function syncToFirestore() {
   if (!db || !currentUser) return;
   try {
     const uid = getSafeUserId();
-    const dataToSave = {
+    const dataToSave = JSON.parse(JSON.stringify({
       clients: state.clients,
       entries: state.entries,
       settings: state.settings,
-      active: state.active,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    };
+      active: state.active || null
+    }));
+    dataToSave.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
     await db.collection('user_data').doc(uid).set(dataToSave, { merge: true });
   } catch (err) {
     console.warn('Error sincronizando con Firestore:', err);
@@ -1355,73 +1355,126 @@ function setupAuthUI() {
     }
 
     const users = getStoredUsers();
-    const cleanId = identifier.toLowerCase();
+    const cleanId = identifier.toLowerCase().replace(/[^a-z0-9]/g, '_');
 
-    if (authMode === 'register') {
-      if (password !== confirmPassword) {
-        authError.textContent = 'Las contraseñas no coinciden.';
-        $('#authConfirmPassword').focus();
-        return;
-      }
+    btnAuth.disabled = true;
+    btnAuth.textContent = 'Verificando...';
 
-      if (users[cleanId]) {
-        authError.textContent = 'Ya existe una cuenta con este identificador. Por favor inicia sesión.';
-        return;
-      }
+    try {
+      const inputHash = await hashPassword(password);
 
-      const hash = await hashPassword(password);
-      users[cleanId] = {
-        identifier,
-        hash,
-        createdAt: new Date().toISOString()
-      };
-      saveStoredUsers(users);
-      setSessionUser(identifier, remember);
-      state = loadState();
-      startFirestoreListener();
-      toast('¡Cuenta creada con éxito!');
-      loginScreen.hidden = true;
-      mainApp.hidden = false;
-      tabbar.hidden = false;
-      render();
-    } else {
-      // Modo Iniciar Sesión
-      const user = users[cleanId];
-      if (!user) {
-        // Si no existe ninguna cuenta en el dispositivo, permitir crearla automáticamente o avisar
-        const hash = await hashPassword(password);
-        users[cleanId] = {
-          identifier,
-          hash,
-          createdAt: new Date().toISOString()
-        };
+      if (authMode === 'register') {
+        if (password !== confirmPassword) {
+          authError.textContent = 'Las contraseñas no coinciden.';
+          $('#authConfirmPassword').focus();
+          btnAuth.disabled = false;
+          btnAuth.textContent = 'Crear cuenta e ingresar';
+          return;
+        }
+
+        // Verificar en Firestore si ya existe
+        if (db) {
+          const docSnap = await db.collection('user_accounts').doc(cleanId).get();
+          if (docSnap.exists) {
+            authError.textContent = 'Ya existe una cuenta con este identificador. Por favor inicia sesión.';
+            btnAuth.disabled = false;
+            btnAuth.textContent = 'Crear cuenta e ingresar';
+            return;
+          }
+          // Guardar en la nube
+          await db.collection('user_accounts').doc(cleanId).set({
+            identifier,
+            hash: inputHash,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        }
+
+        // Guardar copia local
+        users[cleanId] = { identifier, hash: inputHash, createdAt: new Date().toISOString() };
         saveStoredUsers(users);
+
         setSessionUser(identifier, remember);
         state = loadState();
         startFirestoreListener();
-        toast('¡Bienvenido!');
+        toast('¡Cuenta creada con éxito!');
         loginScreen.hidden = true;
         mainApp.hidden = false;
         tabbar.hidden = false;
         render();
-        return;
-      }
+      } else {
+        // Modo Iniciar Sesión
+        let accountData = null;
 
-      const inputHash = await hashPassword(password);
-      if (inputHash !== user.hash) {
-        authError.textContent = 'Contraseña incorrecta. Por favor intenta de nuevo.';
-        $('#authPassword').focus();
-        return;
-      }
+        // 1. Buscar en la nube en Firestore primero para sincronización multidispositivo
+        if (db) {
+          try {
+            const docSnap = await db.collection('user_accounts').doc(cleanId).get();
+            if (docSnap.exists) {
+              accountData = docSnap.data();
+            }
+          } catch (e) {
+            console.warn('Error leyendo cuenta remota:', e);
+          }
+        }
 
-      setSessionUser(user.identifier, remember);
-      state = loadState();
-      startFirestoreListener();
-      toast(`Hola, ${user.identifier}`);
-      loginScreen.hidden = true;
-      mainApp.hidden = false;
-      tabbar.hidden = false;
-      render();
+        // 2. Si no se encontró en la nube, buscar en local
+        if (!accountData && users[cleanId]) {
+          accountData = users[cleanId];
+        }
+
+        if (!accountData) {
+          // Primera vez en este u otro dispositivo: registrar automáticamente la cuenta en la nube
+          if (db) {
+            await db.collection('user_accounts').doc(cleanId).set({
+              identifier,
+              hash: inputHash,
+              createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+          }
+          users[cleanId] = { identifier, hash: inputHash, createdAt: new Date().toISOString() };
+          saveStoredUsers(users);
+
+          setSessionUser(identifier, remember);
+          state = loadState();
+          startFirestoreListener();
+          toast('¡Bienvenido!');
+          loginScreen.hidden = true;
+          mainApp.hidden = false;
+          tabbar.hidden = false;
+          render();
+          return;
+        }
+
+        // Validar contraseña
+        if (inputHash !== accountData.hash) {
+          authError.textContent = 'Contraseña incorrecta. Por favor intenta de nuevo.';
+          $('#authPassword').focus();
+          btnAuth.disabled = false;
+          btnAuth.textContent = 'Ingresar';
+          return;
+        }
+
+        // Guardar copia local si venía de la nube
+        users[cleanId] = { identifier, hash: inputHash };
+        saveStoredUsers(users);
+
+        setSessionUser(accountData.identifier || identifier, remember);
+        state = loadState();
+        startFirestoreListener();
+        toast(`Hola, ${accountData.identifier || identifier}`);
+        loginScreen.hidden = true;
+        mainApp.hidden = false;
+        tabbar.hidden = false;
+        render();
+      }
+    } catch (err) {
+      console.error('Error durante autenticación:', err);
+      authError.textContent = 'Hubo un error de conexión al verificar tu cuenta. Intenta de nuevo.';
+    } finally {
+      btnAuth.disabled = false;
+      if (btnAuth.textContent === 'Verificando...') {
+        btnAuth.textContent = authMode === 'login' ? 'Ingresar' : 'Crear cuenta e ingresar';
+      }
     }
   };
 }
